@@ -1,0 +1,6 @@
+{
+  "name": "b33t — Freedom to Music",
+  "description": "Ultra-Fast, Spotify-Grade Music Streaming for Laptop & Desktop. Zero Subscriptions. Zero Ads. Zero Telemetry. 100% Freedom.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
