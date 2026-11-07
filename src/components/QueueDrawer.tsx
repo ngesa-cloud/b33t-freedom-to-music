@@ -20,7 +20,11 @@ export const QueueDrawer: React.FC<QueueDrawerProps> = ({ isOpen, onClose }) => 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 w-80 md:w-96 bg-[#121216] border-l border-[#1e1e24] z-50 flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
+    <div onClick={onClose} className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-xs flex justify-end animate-in fade-in duration-150">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-80 md:w-96 h-full bg-[#121216] border-l border-[#1e1e24] flex flex-col shadow-2xl animate-in slide-in-from-right duration-200"
+      >
       {/* Header */}
       <div className="p-4 border-b border-[#1e1e24] flex items-center justify-between">
         <div className="flex items-center gap-2.5">
@@ -131,6 +135,7 @@ export const QueueDrawer: React.FC<QueueDrawerProps> = ({ isOpen, onClose }) => 
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

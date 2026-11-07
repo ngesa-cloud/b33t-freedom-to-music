@@ -5,14 +5,17 @@
 
 type PlayerStateCallback = (state: 'playing' | 'paused' | 'ended' | 'buffering' | 'idle') => void;
 type TimeUpdateCallback = (currentTime: number, duration: number) => void;
+type ErrorCallback = (errorCode: number, videoId: string | null) => void;
 
 export class YouTubeEngine {
   private player: any = null;
   private isReady = false;
   private pendingVideoId: string | null = null;
+  private shouldAutoplayPending = false;
   private pollInterval: any = null;
   private stateCallbacks: Set<PlayerStateCallback> = new Set();
   private timeCallbacks: Set<TimeUpdateCallback> = new Set();
+  private errorCallbacks: Set<ErrorCallback> = new Set();
   private currentVideoId: string | null = null;
   private currentVolume = 0.8;
   private isMuted = false;
@@ -47,6 +50,7 @@ export class YouTubeEngine {
 
     if (initialVideoId) {
       this.pendingVideoId = initialVideoId;
+      this.shouldAutoplayPending = true;
     }
 
     if (!(window as any).YT || !(window as any).YT.Player) {
@@ -55,7 +59,6 @@ export class YouTubeEngine {
 
     const container = document.getElementById(containerId);
     if (!container) {
-      console.warn(`[YouTubeEngine] Container #${containerId} not found in DOM`);
       return;
     }
 
@@ -66,13 +69,14 @@ export class YouTubeEngine {
       return;
     }
 
+    const shouldAutoplay = Boolean(initialVideoId || this.shouldAutoplayPending);
     const targetVideo = initialVideoId || this.pendingVideoId || 'Or2sMfOcTtw';
 
     try {
       this.player = new (window as any).YT.Player(containerId, {
         videoId: targetVideo,
         playerVars: {
-          autoplay: 1,
+          autoplay: shouldAutoplay ? 1 : 0,
           controls: 1,
           disablekb: 0,
           fs: 1,
@@ -91,6 +95,10 @@ export class YouTubeEngine {
 
             if (this.pendingVideoId && this.pendingVideoId !== targetVideo) {
               this.loadVideo(this.pendingVideoId);
+            } else if (this.shouldAutoplayPending) {
+              try {
+                event.target.playVideo();
+              } catch {}
             }
           },
           onStateChange: (event: any) => {
@@ -117,6 +125,10 @@ export class YouTubeEngine {
           },
           onError: (err: any) => {
             console.warn('[YouTubeEngine] playback error:', err?.data);
+            this.stopPolling();
+            for (const cb of this.errorCallbacks) {
+              cb(err?.data || 0, this.currentVideoId);
+            }
           },
         },
       });
@@ -128,6 +140,7 @@ export class YouTubeEngine {
   public loadVideo(videoId: string) {
     this.pendingVideoId = videoId;
     this.currentVideoId = videoId;
+    this.shouldAutoplayPending = true;
 
     if (this.player && this.isReady && typeof this.player.loadVideoById === 'function') {
       try {
@@ -154,6 +167,7 @@ export class YouTubeEngine {
   }
 
   public pause() {
+    this.shouldAutoplayPending = false;
     if (this.player && this.isReady && typeof this.player.pauseVideo === 'function') {
       try {
         this.player.pauseVideo();
@@ -247,6 +261,11 @@ export class YouTubeEngine {
   public onTimeUpdate(cb: TimeUpdateCallback): () => void {
     this.timeCallbacks.add(cb);
     return () => this.timeCallbacks.delete(cb);
+  }
+
+  public onError(cb: ErrorCallback): () => void {
+    this.errorCallbacks.add(cb);
+    return () => this.errorCallbacks.delete(cb);
   }
 }
 

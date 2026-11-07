@@ -1,162 +1,256 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  Home,
-  Search,
   Library,
-  BookOpen,
-  Server,
   Heart,
-  HardDrive,
-  Trash2,
-  Radio,
   Plus,
+  Search,
+  Play,
+  Music,
 } from 'lucide-react';
 import { useMusicPlayer } from '../context/MusicPlayerContext';
+import { FeaturedArtist } from '../types/music';
 
 interface SidebarProps {
   currentView: string;
   onNavigate: (view: string) => void;
   onOpenImport: () => void;
+  onSelectArtist?: (artist: FeaturedArtist) => void;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 MB';
-  const mb = bytes / (1024 * 1024);
-  if (mb >= 1024) {
-    return `${(mb / 1024).toFixed(2)} GB`;
-  }
-  return `${mb.toFixed(1)} MB`;
-}
+const LIBRARY_ARTISTS: FeaturedArtist[] = [
+  {
+    name: 'Burna Boy',
+    monthly_listeners: '18,400,000',
+    origin: 'Port Harcourt, Nigeria',
+    bio: 'Grammy-winning African Giant whose polyrhythmic Afro-fusion fills global stadiums.',
+    image: 'https://i.ytimg.com/vi/421w1j87fEM/hqdefault.jpg',
+  },
+  {
+    name: 'Asake',
+    monthly_listeners: '9,840,000',
+    origin: 'Lagos, Nigeria',
+    bio: 'Mr. Money with the vibe — uniting Fuji street-pop cadences with thunderous Amapiano basslines.',
+    image: 'https://i.ytimg.com/vi/bbVZo4Yw7pI/hqdefault.jpg',
+  },
+  {
+    name: 'Bien',
+    monthly_listeners: '2,481,200',
+    origin: 'Nairobi, Kenya',
+    bio: 'East African soul royalty and frontman of Sauti Sol, leading global Afro-pop with irresistible acoustic harmonics.',
+    image: 'https://i.ytimg.com/vi/Or2sMfOcTtw/hqdefault.jpg',
+  },
+  {
+    name: 'Tems',
+    monthly_listeners: '14,600,000',
+    origin: 'Lagos, Nigeria',
+    bio: 'Grammy and Oscar-nominated visionary whose evocative contralto redefined modern Alté and R&B.',
+    image: 'https://i.ytimg.com/vi/1JltlSJH5bY/hqdefault.jpg',
+  },
+  {
+    name: 'Kendrick Lamar',
+    monthly_listeners: '64,200,000',
+    origin: 'Compton, California',
+    bio: 'Pulitzer Prize recipient and master of lyrical architecture and cultural commentary.',
+    image: 'https://i.ytimg.com/vi/T6eK-2OQtew/hqdefault.jpg',
+  },
+  {
+    name: 'The Weeknd',
+    monthly_listeners: '108,000,000',
+    origin: 'Toronto, Canada',
+    bio: 'Abel Tesfaye created an epochal body of work across dark R&B, synthwave, and stadium pop.',
+    image: 'https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg',
+  },
+];
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onOpenImport }) => {
-  const { cacheStatus, clearCache, likedIds } = useMusicPlayer();
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentView,
+  onNavigate,
+  onOpenImport,
+  onSelectArtist,
+}) => {
+  const { likedIds, catalogTracks, playTrack } = useMusicPlayer();
+  const [libFilter, setLibFilter] = useState<'all' | 'playlists' | 'artists'>('all');
+  const [libSearch, setLibSearch] = useState('');
+  const [showLibSearch, setShowLibSearch] = useState(false);
 
-  const totalBytes = cacheStatus?.total_bytes || 0;
-  const trackCount = cacheStatus?.track_count || 0;
-  const softCapBytes = 500 * 1024 * 1024; // 500 MB
-  const percentCap = Math.min(100, Math.round((totalBytes / softCapBytes) * 100));
+  const filteredArtists = LIBRARY_ARTISTS.filter((a) =>
+    a.name.toLowerCase().includes(libSearch.toLowerCase())
+  );
 
-  const navItems = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'search', label: 'Search', icon: Search },
-    { id: 'library', label: 'Your Library', icon: Library },
-    { id: 'manifesto', label: 'The Manifesto', icon: BookOpen },
-    { id: 'api-explorer', label: 'API Explorer', icon: Server },
-  ];
+  const filteredTracks = catalogTracks
+    .slice(0, 6)
+    .filter(
+      (t) =>
+        t.title.toLowerCase().includes(libSearch.toLowerCase()) ||
+        t.artist.toLowerCase().includes(libSearch.toLowerCase())
+    );
 
   return (
-    <aside className="w-[240px] bg-[#121216] border-r border-[#1e1e24] flex flex-col h-full shrink-0 select-none">
-      {/* Brand Header */}
-      <div className="p-5 pb-4">
+    <aside className="w-[280px] lg:w-[320px] bg-[#121212] rounded-lg flex flex-col h-full shrink-0 select-none overflow-hidden">
+      {/* Spotify "Your Library" Header */}
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <button
-          onClick={() => onNavigate('home')}
-          className="flex items-center gap-3 group text-left w-full focus:outline-none"
-        >
-          <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-lg shadow-[#1DB954]/25 border border-[#1DB954]/40 group-hover:scale-105 transition-transform duration-150 shrink-0 overflow-hidden">
-            <img src="/logo.png" alt="b33t logo" className="w-full h-full object-contain" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xl font-bold tracking-tight text-white font-mono">b33t</span>
-              <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-950/80 text-[#1DB954] border border-emerald-500/30">
-                v2.0
-              </span>
-            </div>
-            <p className="text-[11px] text-[#8a8a92] font-medium tracking-tight">Freedom to Music</p>
-          </div>
-        </button>
-      </div>
-
-      {/* Main Navigation */}
-      <nav className="px-3 space-y-1">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentView === item.id;
-
-          return (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-150 ${
-                isActive
-                  ? 'bg-[#1a1a20] text-white border-l-2 border-[#1DB954] pl-2.5 shadow-sm'
-                  : 'text-[#8a8a92] hover:text-white hover:bg-[#1a1a20]/60'
-              }`}
-            >
-              <Icon className={`w-4 h-4 ${isActive ? 'text-[#1DB954]' : 'text-[#8a8a92]'}`} />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* Library Collections */}
-      <div className="mt-5 px-3 flex-1 flex flex-col min-h-0 border-t border-[#1e1e24] pt-4">
-        <div className="flex items-center justify-between px-2 mb-2">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#8a8a92]">
-            Collections
-          </span>
-          <button
-            onClick={onOpenImport}
-            title="Import Local Audio"
-            className="p-1 rounded text-[#8a8a92] hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Liked Songs Tile */}
-        <button
-          onClick={() => onNavigate('liked')}
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150 mb-1 ${
-            currentView === 'liked'
-              ? 'bg-[#1a1a20] text-white border-l-2 border-[#1DB954] pl-2.5 font-medium'
-              : 'text-[#8a8a92] hover:text-white hover:bg-[#1a1a20]/60'
+          onClick={() => onNavigate('library')}
+          className={`flex items-center gap-3 font-bold text-base transition-colors ${
+            currentView === 'library' ? 'text-white' : 'text-[#b3b3b3] hover:text-white'
           }`}
         >
-          <div className="w-7 h-7 rounded bg-gradient-to-br from-indigo-600 to-purple-800 flex items-center justify-center shrink-0">
-            <Heart className="w-3.5 h-3.5 fill-white text-white" />
-          </div>
-          <div className="flex-1 text-left truncate">
-            <p className="truncate text-xs font-semibold text-white">Liked Songs</p>
-            <p className="text-[11px] text-[#8a8a92] tabular-nums">{likedIds.length} tracks</p>
-          </div>
+          <Library className="w-6 h-6" />
+          <span>Your Library</span>
+        </button>
+
+        <button
+          onClick={onOpenImport}
+          title="Import audio or create playlist"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[#b3b3b3] hover:text-white hover:bg-[#1f1f1f] transition-colors"
+        >
+          <Plus className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Section 4.6: Cache Panel (bottom-left) */}
-      <div className="p-3 mx-3 mb-3 mt-2 rounded-xl bg-[#1a1a20] border border-[#1e1e24]">
-        <div className="flex items-center justify-between text-xs mb-1.5">
-          <div className="flex items-center gap-1.5 text-zinc-200">
-            <HardDrive className="w-3.5 h-3.5 text-[#1DB954]" />
-            <span className="font-semibold text-[11px] tracking-tight">audio_cache/</span>
-          </div>
+      {/* Filter Tabs (Playlists / Artists) */}
+      <div className="px-4 py-2 flex items-center gap-2">
+        {[
+          { id: 'all', label: 'All' },
+          { id: 'playlists', label: 'Playlists' },
+          { id: 'artists', label: 'Artists' },
+        ].map((tab) => (
           <button
-            onClick={() => clearCache()}
-            title="Flush local audio cache (DELETE /api/cache)"
-            className="text-[#8a8a92] hover:text-red-400 p-1 rounded transition-colors"
+            key={tab.id}
+            onClick={() => setLibFilter(tab.id as any)}
+            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              libFilter === tab.id
+                ? 'bg-white text-black'
+                : 'bg-[#232323] text-white hover:bg-[#2a2a2a]'
+            }`}
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            {tab.label}
           </button>
-        </div>
+        ))}
+      </div>
 
-        <div className="flex items-center justify-between text-[11px] text-[#8a8a92]">
-          <span>{trackCount} tracks</span>
-          <span className="font-mono text-[#00e0a0] font-medium tabular-nums">
-            {formatBytes(totalBytes)}
-          </span>
-        </div>
+      {/* Library Search & Recents Row */}
+      <div className="px-4 py-1.5 flex items-center justify-between gap-2">
+        {showLibSearch ? (
+          <div className="flex items-center gap-2 bg-[#242424] rounded-md px-2.5 py-1 flex-1">
+            <Search className="w-3.5 h-3.5 text-[#b3b3b3] shrink-0" />
+            <input
+              type="text"
+              value={libSearch}
+              onChange={(e) => setLibSearch(e.target.value)}
+              onBlur={() => {
+                if (!libSearch) setShowLibSearch(false);
+              }}
+              placeholder="Search in Your Library"
+              className="bg-transparent text-xs text-white placeholder-[#b3b3b3] focus:outline-none w-full"
+              autoFocus
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowLibSearch(true)}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[#b3b3b3] hover:text-white hover:bg-[#1f1f1f] transition-colors"
+            title="Search in Your Library"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+        )}
 
-        {/* Progress bar relative to 500 MB soft cap */}
-        <div className="w-full bg-zinc-800 h-1.5 rounded-full mt-2 overflow-hidden">
-          <div
-            className="bg-[#1DB954] h-full rounded-full transition-all duration-300"
-            style={{ width: `${percentCap}%` }}
-          />
-        </div>
-        <p className="text-[10px] text-[#8a8a92] mt-1.5 truncate">
-          {percentCap}% of 500 MB soft cap
-        </p>
+        <button
+          onClick={() => onNavigate('library')}
+          className="text-xs font-medium text-[#b3b3b3] hover:text-white transition-colors whitespace-nowrap shrink-0"
+        >
+          Recents
+        </button>
+      </div>
+
+      {/* Scrollable Library Items List */}
+      <div className="flex-1 overflow-y-auto px-2 py-1 space-y-0.5">
+        {/* Liked Songs Pinned Item */}
+        {(libFilter === 'all' || libFilter === 'playlists') && (
+          <button
+            onClick={() => onNavigate('liked')}
+            className={`w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors group ${
+              currentView === 'liked' ? 'bg-[#232323]' : 'hover:bg-[#1f1f1f]'
+            }`}
+          >
+            <div className="w-12 h-12 rounded-md bg-gradient-to-br from-[#450af5] via-[#8e8ee5] to-[#c4efd9] flex items-center justify-center shrink-0">
+              <Heart className="w-5 h-5 fill-white text-white" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p
+                className={`text-sm font-semibold truncate ${
+                  currentView === 'liked' ? 'text-[#1ed760]' : 'text-white'
+                }`}
+              >
+                Liked Songs
+              </p>
+              <p className="text-xs text-[#b3b3b3] truncate mt-0.5">
+                Playlist · {likedIds.length} songs
+              </p>
+            </div>
+          </button>
+        )}
+
+        {/* Saved Artists */}
+        {(libFilter === 'all' || libFilter === 'artists') &&
+          filteredArtists.map((artist) => (
+            <button
+              key={artist.name}
+              onClick={() => {
+                if (onSelectArtist) onSelectArtist(artist);
+              }}
+              className="w-full flex items-center gap-3 p-2 rounded-md text-left hover:bg-[#1f1f1f] transition-colors group"
+            >
+              <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 bg-[#282828]">
+                <img
+                  src={artist.image}
+                  alt={artist.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white truncate">{artist.name}</p>
+                <p className="text-xs text-[#b3b3b3] truncate mt-0.5">Artist</p>
+              </div>
+            </button>
+          ))}
+
+        {/* Quick Library Tracks */}
+        {(libFilter === 'all' || libFilter === 'playlists') &&
+          filteredTracks.map((trk) => {
+            const id = trk.video_id || trk.id || '';
+            return (
+              <button
+                key={`lib-trk-${id}`}
+                onClick={() => playTrack(trk)}
+                className="w-full flex items-center gap-3 p-2 rounded-md text-left hover:bg-[#1f1f1f] transition-colors group"
+              >
+                <div className="relative w-12 h-12 rounded-md overflow-hidden shrink-0 bg-[#282828]">
+                  {trk.thumbnail ? (
+                    <img
+                      src={trk.thumbnail}
+                      alt={trk.title}
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <Music className="w-5 h-5 text-[#b3b3b3] m-auto" />
+                  )}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <Play className="w-4 h-4 fill-white text-white ml-0.5" />
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-white truncate">{trk.title}</p>
+                  <p className="text-xs text-[#b3b3b3] truncate mt-0.5">
+                    Song · {trk.artist}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
       </div>
     </aside>
   );

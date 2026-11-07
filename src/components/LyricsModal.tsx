@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Mic2, Maximize2, Minimize2, Loader2 } from 'lucide-react';
-import { useMusicPlayer } from '../context/MusicPlayerContext';
+import { useMusicPlayer, apiUrl } from '../context/MusicPlayerContext';
 import { LyricLine } from '../types/music';
 
 interface LyricsModalProps {
@@ -24,38 +24,33 @@ export const LyricsModal: React.FC<LyricsModalProps> = ({ isOpen, onClose }) => 
 
     const fetchLyrics = async () => {
       try {
-        const query = encodeURIComponent(`${currentTrack.title} ${currentTrack.artist}`);
-        const res = await fetch(`https://api.textyl.co/api/lyrics?q=${query}`, {
-          headers: { Accept: 'application/json' },
-        });
+        const res = await fetch(
+          apiUrl(
+            `/api/lyrics?title=${encodeURIComponent(currentTrack.title)}&artist=${encodeURIComponent(
+              currentTrack.artist
+            )}`
+          )
+        );
 
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0 && isMounted) {
-            const parsed: LyricLine[] = data.map((item: any) => ({
-              seconds: typeof item.seconds === 'number' ? item.seconds : parseFloat(item.time || '0'),
-              lyrics: item.lyrics || item.line || '',
-            }));
-            setLyrics(parsed);
+            setLyrics(data);
             setIsLoading(false);
             return;
           }
         }
       } catch (err) {
-        console.warn('[Lyrics] Live API fetch failed, falling back to track embedded lines:', err);
+        console.warn('[Lyrics] Backend lyrics fetch warning:', err);
       }
 
-      // Fallback: Generate or provide synced lines for track
+      // Fallback: provide clean timed track lines
       if (isMounted) {
         const fallbackLines: LyricLine[] = [
-          { seconds: 0, lyrics: `♪ ${currentTrack.title} by ${currentTrack.artist} ♪` },
-          { seconds: 8, lyrics: 'Streaming via uncompressed native Opus 251 fidelity' },
-          { seconds: 18, lyrics: 'Zero monthly subscriptions · Zero audio advertisements' },
-          { seconds: 32, lyrics: 'b33t local caching in full effect on 127.0.0.1' },
-          { seconds: 48, lyrics: 'Pure acoustic harmony, unhindered by telemetry' },
-          { seconds: 64, lyrics: 'Feel the rhythm flow directly from disk' },
-          { seconds: 84, lyrics: `Album: ${currentTrack.album}` },
-          { seconds: 104, lyrics: 'Complete freedom to music on your workstation' },
+          { seconds: 0, lyrics: `♪ ${currentTrack.title} — ${currentTrack.artist} ♪` },
+          { seconds: 10, lyrics: `Album: ${currentTrack.album || 'Single Release'}` },
+          { seconds: 22, lyrics: 'High-fidelity audio stream active' },
+          { seconds: 38, lyrics: 'Enjoy uninterrupted playback' },
         ];
         setLyrics(fallbackLines);
         setIsLoading(false);
@@ -93,11 +88,13 @@ export const LyricsModal: React.FC<LyricsModalProps> = ({ isOpen, onClose }) => 
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-black/85 backdrop-blur-xl flex flex-col transition-all duration-300 animate-in fade-in ${
+      onClick={onClose}
+      className={`fixed inset-0 z-[60] bg-black/85 backdrop-blur-xl flex flex-col transition-all duration-300 animate-in fade-in ${
         isFullscreen ? 'p-0' : 'p-4 md:p-8'
       }`}
     >
       <div
+        onClick={(e) => e.stopPropagation()}
         className={`bg-[#0a0a0c] border border-[#1e1e24] rounded-2xl w-full h-full max-w-4xl mx-auto overflow-hidden shadow-2xl flex flex-col relative ${
           isFullscreen ? 'max-w-none rounded-none border-none' : ''
         }`}

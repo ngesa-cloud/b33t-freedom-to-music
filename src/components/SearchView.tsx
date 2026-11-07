@@ -21,13 +21,16 @@ import {
   SearchArtistResult,
   SearchAlbumResult,
 } from '../types/music';
-import { useMusicPlayer } from '../context/MusicPlayerContext';
+import { useMusicPlayer, apiUrl } from '../context/MusicPlayerContext';
 import { TrackTable } from './TrackTable';
 
 interface SearchViewProps {
   initialQuery?: string;
+  onQueryChange?: (query: string) => void;
+  hideInlineSearch?: boolean;
   onArtistClick?: (artist: string) => void;
   onSelectArtist?: (artist: FeaturedArtist) => void;
+  isMobile?: boolean;
 }
 
 const GENRE_PILLS = [
@@ -72,43 +75,14 @@ function formatDuration(sec: number): string {
 
 export const SearchView: React.FC<SearchViewProps> = ({
   initialQuery = '',
+  onQueryChange,
+  hideInlineSearch = false,
   onArtistClick,
   onSelectArtist,
+  isMobile = false,
 }) => {
-  const { currentTrack, isPlaying, likedIds, playTrack, playAll, toggleLike, addToQueue, togglePlay } =
+  const { currentTrack, isPlaying, likedIds, playTrack, playAll, toggleLike, addToQueue } =
     useMusicPlayer();
-
-  const handlePlayAlbum = async (alb: SearchAlbumResult, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const res = await fetch(
-        `/api/album/${encodeURIComponent(alb.id)}/tracks?artist=${encodeURIComponent(
-          alb.artist
-        )}&album=${encodeURIComponent(alb.title)}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.tracks && Array.isArray(data.tracks) && data.tracks.length > 0) {
-          const mapped: Track[] = data.tracks.map((t: any) => ({
-            video_id: t.video_id || '',
-            id: t.id || String(Math.random()),
-            title: t.title,
-            artist: t.artist || alb.artist,
-            album: alb.title,
-            duration: t.duration || 210,
-            thumbnail: alb.thumbnail || t.thumbnail,
-          }));
-          playAll(mapped);
-          return;
-        }
-      }
-    } catch {}
-
-    const matching = songs.filter((s) => s.artist.toLowerCase() === alb.artist.toLowerCase());
-    if (matching.length > 0) {
-      playAll(matching);
-    }
-  };
 
   const [query, setQuery] = useState<string>(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState<string>(initialQuery);
@@ -119,11 +93,92 @@ export const SearchView: React.FC<SearchViewProps> = ({
   const [artists, setArtists] = useState<SearchArtistResult[]>([]);
   const [songs, setSongs] = useState<Track[]>([]);
   const [albums, setAlbums] = useState<SearchAlbumResult[]>([]);
-
-  const [suggestions, setSuggestions] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+  const [resolvingIds, setResolvingIds] = useState<string[]>([]);
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // On-the-fly resolver for tracks that don't yet have a pre-resolved 11-char YouTube video_id
+  const resolveTrackOnTheFly = async (track: Track): Promise<Track> => {
+    if (track.video_id && /^[a-zA-Z0-9_-]{11}$/.test(track.video_id.trim())) {
+      return track;
+    }
+
+    const trackKey = track.id || `${track.title}-${track.artist}`;
+    setResolvingIds((prev) => (prev.includes(trackKey) ? prev : [...prev, trackKey]));
+
+    try {
+      const res = await fetch(
+        apiUrl(
+          `/api/resolve_track?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(
+            track.artist
+          )}`
+        )
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.video_id) {
+          const resolvedTrack: Track = { ...track, video_id: data.video_id };
+          setSongs((prev) =>
+            prev.map((item) => (item.id === track.id ? resolvedTrack : item))
+          );
+          return resolvedTrack;
+        }
+      }
+    } catch (err) {
+      console.warn('[Search On-the-fly Resolve] error:', err);
+    } finally {
+      setResolvingIds((prev) => prev.filter((id) => id !== trackKey));
+    }
+
+    return track;
+  };
+
+  const handlePlayTrackOnDemand = async (track: Track) => {
+    const resolved = await resolveTrackOnTheFly(track);
+    playTrack(resolved);
+  };
+
+  const handleQueueTrackOnDemand = async (track: Track) => {
+    const resolved = await resolveTrackOnTheFly(track);
+    addToQueue(resolved);
+  };
+
+  const handlePlayAlbum = async (alb: SearchAlbumResult, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(
+        apiUrl(
+          `/api/album/${encodeURIComponent(alb.id)}/tracks?artist=${encodeURIComponent(
+            alb.artist
+          )}&album=${encodeURIComponent(alb.title)}`
+        )
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.tracks && Array.isArray(data.tracks) && data.tracks.length > 0) {
+          const mapped: Track[] = data.tracks.map((t: any, idx: number) => ({
+            video_id: t.video_id || '',
+            id: String(t.id || `alb-${alb.id}-${idx + 1}`),
+            track_number: typeof t.track_number === 'number' ? t.track_number : idx + 1,
+            title: t.title,
+            artist: t.artist || alb.artist,
+            album: alb.title,
+            duration: t.duration || 210,
+            thumbnail: alb.thumbnail || t.thumbnail,
+          }));
+          const firstResolved = await resolveTrackOnTheFly(mapped[0]);
+          playAll([firstResolved, ...mapped.slice(1)]);
+          return;
+        }
+      }
+    } catch {}
+
+    const matching = songs.filter((s) => s.artist.toLowerCase() === alb.artist.toLowerCase());
+    if (matching.length > 0) {
+      const firstResolved = await resolveTrackOnTheFly(matching[0]);
+      playAll([firstResolved, ...matching.slice(1)]);
+    }
+  };
 
   // Synchronize when initialQuery changes from TopNav
   useEffect(() => {
@@ -148,7 +203,6 @@ export const SearchView: React.FC<SearchViewProps> = ({
       setArtists([]);
       setSongs([]);
       setAlbums([]);
-      setSuggestions([]);
       return;
     }
 
@@ -157,25 +211,21 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
     const performSearch = async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(debouncedQuery)}`);
+        const res = await fetch(apiUrl(`/api/search?q=${encodeURIComponent(debouncedQuery)}`));
         if (res.ok) {
           const data = await res.json();
           if (isMounted) {
             if (Array.isArray(data)) {
-              // Legacy array fallback
               setSongs(data);
-              setSuggestions(data.slice(0, 5));
               setTopResult(data[0] ? { type: 'song', ...data[0], subtitle: `Song • ${data[0].artist}` } : null);
               setArtists([]);
               setAlbums([]);
             } else {
-              // New Structured Intent-Aware Payload
               const payload = data as StructuredSearchResponse;
               setTopResult(payload.topResult || null);
               setArtists(payload.artists || []);
               setSongs(payload.songs || []);
               setAlbums(payload.albums || []);
-              setSuggestions((payload.songs || []).slice(0, 5));
             }
           }
         }
@@ -193,138 +243,120 @@ export const SearchView: React.FC<SearchViewProps> = ({
     };
   }, [debouncedQuery]);
 
-  // Click outside closes auto-suggest dropdown
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const handlePillClick = (genre: string) => {
     setQuery(genre);
     setDebouncedQuery(genre);
-    setShowSuggestions(false);
+    onQueryChange?.(genre);
   };
 
-  const navigateArtist = (artistObj: { name: string; image?: string; monthly_listeners?: string; origin?: string; bio?: string }) => {
+  const navigateArtist = (artistObj: {
+    name: string;
+    image?: string;
+    monthly_listeners?: string;
+    origin?: string;
+    bio?: string;
+  }) => {
+    const primaryName = artistObj.name
+      .split(/,|&|\bfeat\.?|\bft\.?/i)[0]
+      .replace(/_/g, ' ')
+      .trim();
+    const cleanTargetName = primaryName || artistObj.name.replace(/_/g, ' ').trim();
+
+    const matchedArtist = artists.find(
+      (a) => a.name.toLowerCase() === cleanTargetName.toLowerCase()
+    );
+
     if (onSelectArtist) {
       onSelectArtist({
-        name: artistObj.name,
-        monthly_listeners: artistObj.monthly_listeners || '8.4M',
-        origin: artistObj.origin || 'Global',
-        bio: artistObj.bio || `${artistObj.name} recording discography and releases.`,
-        image: artistObj.image || getArtistAvatarFallback(artistObj.name),
+        name: matchedArtist?.name || cleanTargetName,
+        monthly_listeners:
+          artistObj.monthly_listeners || matchedArtist?.monthly_listeners || '1.8M',
+        origin: artistObj.origin || matchedArtist?.origin || 'Global',
+        bio:
+          artistObj.bio ||
+          matchedArtist?.bio ||
+          `${cleanTargetName} recording discography and releases.`,
+        image:
+          artistObj.image ||
+          matchedArtist?.image ||
+          getArtistAvatarFallback(cleanTargetName),
       });
     } else if (onArtistClick) {
-      onArtistClick(artistObj.name);
+      onArtistClick(cleanTargetName);
     }
   };
 
-  const handleTopResultPlay = (e: React.MouseEvent) => {
+  const handleTopResultPlay = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!topResult) return;
     if (topResult.type === 'artist') {
-      if (topResult.topTrack) {
-        playTrack(topResult.topTrack);
-      } else if (songs.length > 0) {
-        playTrack(songs[0]);
+      const target = topResult.topTrack || songs[0];
+      if (target) {
+        await handlePlayTrackOnDemand(target);
       }
     } else {
       const trackToPlay: Track = topResult.topTrack || {
         video_id: topResult.video_id || topResult.id,
+        id: topResult.id,
         title: topResult.title || topResult.name || 'Song',
         artist: topResult.artist || 'Artist',
         album: 'Single',
         duration: topResult.duration || 210,
         thumbnail: topResult.thumbnail || topResult.image,
       };
-      playTrack(trackToPlay);
+      await handlePlayTrackOnDemand(trackToPlay);
     }
   };
 
   const isCurrentTopTrackPlaying =
     topResult &&
     isPlaying &&
-    (currentTrack?.video_id === (topResult.topTrack?.video_id || topResult.id));
+    Boolean(
+      currentTrack &&
+        ((currentTrack.video_id &&
+          currentTrack.video_id === (topResult.topTrack?.video_id || topResult.id)) ||
+          (currentTrack.id && currentTrack.id === (topResult.topTrack?.id || topResult.id)))
+    );
 
   const hasResults = Boolean(topResult || songs.length > 0 || artists.length > 0 || albums.length > 0);
 
   return (
-    <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
-      {/* Header & Debounced Search Input */}
+    <div className={isMobile ? "p-3 space-y-5 max-w-full" : "p-4 md:p-8 space-y-6 max-w-7xl mx-auto"}>
+      {/* Header & Search Filter Bar */}
       <div className="space-y-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#1DB954]">
-            <Sparkles className="w-4 h-4" />
-            <span>DeepSeek Intent-Aware Search Hierarchy</span>
-          </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight mt-1">
-            Search Freedom Catalog
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+            {query.trim() ? `Results for "${query}"` : 'Search'}
           </h1>
-          <p className="text-xs text-[#8a8a92]">
-            Adaptive Artist Profiles, Top Songs, Albums, and Opus 251 High-Fidelity Audio
-          </p>
-        </div>
-
-        {/* Search Input Box & Auto-Suggest Dropdown */}
-        <div ref={searchContainerRef} className="relative max-w-xl">
-          <div className="relative">
-            <Search className="w-5 h-5 text-[#8a8a92] absolute left-4 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setShowSuggestions(true);
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              placeholder="Search artists, songs, Bien, Stormzy, Burna Boy, Drake..."
-              className="w-full bg-[#121216] border border-[#1e1e24] focus:border-[#1DB954] rounded-2xl py-3 pl-12 pr-10 text-sm text-white placeholder-[#8a8a92] focus:outline-none transition-colors shadow-inner"
-              autoFocus
-            />
-            {isLoading && (
-              <Loader2 className="w-4 h-4 text-[#1DB954] animate-spin absolute right-4 top-1/2 -translate-y-1/2" />
-            )}
-          </div>
-
-          {/* Auto-Suggest Dropdown */}
-          {showSuggestions && suggestions.length > 0 && query.trim().length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-2 bg-[#121216] border border-[#1e1e24] rounded-xl shadow-2xl overflow-hidden z-40 divide-y divide-[#1e1e24]">
-              {suggestions.map((item) => (
-                <div
-                  key={item.video_id}
-                  onClick={() => {
-                    playTrack(item);
-                    setShowSuggestions(false);
-                  }}
-                  className="p-3 hover:bg-[#1a1a20] cursor-pointer flex items-center gap-3 transition-colors"
-                >
-                  <img
-                    src={item.thumbnail || `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`}
-                    alt={item.title}
-                    className="w-10 h-10 rounded object-cover shrink-0"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = DEFAULT_TRACK_THUMBNAIL;
-                    }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-white truncate">{item.title}</p>
-                    <p className="text-[11px] text-[#8a8a92] truncate">{item.artist}</p>
-                  </div>
-                  <span className="text-[10px] font-mono text-[#1DB954] uppercase px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/20">
-                    Play
-                  </span>
-                </div>
-              ))}
+          {isLoading && (
+            <div className="flex items-center gap-2 text-xs text-[#1DB954] font-mono">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Searching catalog...</span>
             </div>
           )}
         </div>
+
+        {/* Inline Search Input (Shown only on mobile/layouts where TopNav omnibox is hidden) */}
+        {!hideInlineSearch && (
+          <div ref={searchContainerRef} className="relative max-w-xl">
+            <div className="relative">
+              <Search className="w-5 h-5 text-[#8a8a92] absolute left-4 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  onQueryChange?.(e.target.value);
+                }}
+                placeholder="Search artists, songs, albums..."
+                className="w-full bg-[#121216] border border-[#1e1e24] focus:border-[#1DB954] rounded-2xl py-3 pl-12 pr-10 text-sm text-white placeholder-[#8a8a92] focus:outline-none transition-colors shadow-inner"
+              />
+              {isLoading && (
+                <Loader2 className="w-4 h-4 text-[#1DB954] animate-spin absolute right-4 top-1/2 -translate-y-1/2" />
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Category Filter Tabs: All, Songs, Artists, Albums */}
         <div className="flex items-center justify-between flex-wrap gap-3 pt-1 border-b border-[#1e1e24]/60 pb-3">
@@ -371,10 +403,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
           {activeTab === 'all' && (
             <>
               {/* TOP SECTION: Top Result (Left) + Top 4 Songs (Right) */}
-              <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <section className={isMobile ? "grid grid-cols-1 gap-4 items-start" : "grid grid-cols-1 lg:grid-cols-12 gap-6 items-start"}>
                 {/* 1. TOP RESULT CARD */}
                 {topResult && (
-                  <div className="lg:col-span-5 flex flex-col space-y-3">
+                  <div className={isMobile ? "w-full flex flex-col space-y-3" : "lg:col-span-5 flex flex-col space-y-3"}>
                     <h2 className="text-xl font-bold text-white tracking-tight">Top result</h2>
 
                     <div
@@ -388,7 +420,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                             bio: topResult.bio,
                           });
                         } else if (topResult.topTrack) {
-                          playTrack(topResult.topTrack);
+                          handlePlayTrackOnDemand(topResult.topTrack);
                         }
                       }}
                       className="group relative p-6 rounded-2xl bg-[#121216] hover:bg-[#181822] border border-[#1e1e24] hover:border-white/10 transition-all cursor-pointer shadow-xl flex flex-col justify-between min-h-[240px]"
@@ -451,7 +483,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                       {/* Floating Play Button */}
                       <button
                         onClick={handleTopResultPlay}
-                        className="absolute right-6 bottom-6 w-14 h-14 rounded-full bg-[#1DB954] text-black shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0"
+                        className="absolute right-6 bottom-6 w-14 h-14 rounded-full bg-[#1DB954] text-black shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100 translate-y-0 md:translate-y-2 md:group-hover:translate-y-0"
                         title={`Play ${topResult.name || topResult.title}`}
                       >
                         {isCurrentTopTrackPlaying ? (
@@ -465,7 +497,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 )}
 
                 {/* 2. TOP SONGS (Right Column, 4 Tracks) */}
-                <div className={`${topResult ? 'lg:col-span-7' : 'lg:col-span-12'} flex flex-col space-y-3`}>
+                <div className={`${!isMobile && topResult ? 'lg:col-span-7' : 'w-full'} flex flex-col space-y-3`}>
                   <div className="flex items-center justify-between">
                     <h2 className="text-xl font-bold text-white tracking-tight">Songs</h2>
                     {songs.length > 4 && (
@@ -482,7 +514,11 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   <div className="bg-[#121216] border border-[#1e1e24] rounded-2xl p-2 divide-y divide-[#1e1e24]/40 shadow-inner">
                     {songs.slice(0, 4).map((song, idx) => {
                       const songId = song.video_id || song.id || '';
-                      const isCurrent = (currentTrack?.video_id || currentTrack?.id) === songId;
+                      const isCurrent = Boolean(
+                        currentTrack &&
+                          ((currentTrack.video_id && currentTrack.video_id === song.video_id) ||
+                            (currentTrack.id && currentTrack.id === song.id))
+                      );
                       const isLiked = likedIds.includes(songId);
 
                       return (
@@ -493,7 +529,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                               ? 'bg-white/[0.08] text-[#1DB954]'
                               : 'hover:bg-white/[0.04] text-zinc-200'
                           }`}
-                          onClick={() => playTrack(song)}
+                          onClick={() => handlePlayTrackOnDemand(song)}
                         >
                           <div className="flex items-center gap-3.5 min-w-0 flex-1">
                             {/* Track Thumbnail with Hover Play */}
@@ -522,7 +558,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                             </div>
 
                             {/* Title & Artist */}
-                            <div className="min-w-0 pr-2">
+                            <div className="flex-1 min-w-0 pr-2 overflow-hidden">
                               <p
                                 className={`font-bold text-sm truncate ${
                                   isCurrent ? 'text-[#1DB954]' : 'text-white'
@@ -530,13 +566,13 @@ export const SearchView: React.FC<SearchViewProps> = ({
                               >
                                 {song.title}
                               </p>
-                              <p className="text-xs text-[#8a8a92] truncate mt-0.5">
+                              <p className="text-xs text-[#b3b3b3] truncate mt-0.5">
                                 <span
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     navigateArtist({ name: song.artist });
                                   }}
-                                  className="hover:text-white hover:underline cursor-pointer"
+                                  className="text-[#b3b3b3] hover:text-white hover:underline cursor-pointer"
                                 >
                                   {song.artist}
                                 </span>
@@ -549,17 +585,17 @@ export const SearchView: React.FC<SearchViewProps> = ({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleLike(songId);
+                                toggleLike(songId, song);
                               }}
                               className={`p-1.5 rounded-full hover:bg-white/10 transition-colors ${
                                 isLiked
                                   ? 'text-[#1DB954]'
-                                  : 'opacity-0 group-hover:opacity-100 text-[#8a8a92] hover:text-white'
+                                  : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 text-[#b3b3b3] hover:text-white'
                               }`}
                             >
                               <Heart className={`w-4 h-4 ${isLiked ? 'fill-[#1DB954]' : ''}`} />
                             </button>
-                            <span className="font-mono text-xs text-[#8a8a92] tabular-nums w-10 text-right">
+                            <span className="font-mono text-xs text-[#b3b3b3] tabular-nums w-10 text-right">
                               {formatDuration(song.duration)}
                             </span>
                           </div>
@@ -595,7 +631,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                       >
                         <div className="w-24 h-24 rounded-full overflow-hidden mb-3.5 shadow-xl group-hover:scale-105 transition-transform border border-white/10 relative">
                           <img
-                            src={art.image}
+                            src={art.image || getArtistAvatarFallback(art.name)}
                             alt={art.name}
                             className="w-full h-full object-cover"
                             referrerPolicy="no-referrer"
@@ -699,13 +735,15 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
                   <div className="bg-[#121216] border border-[#1e1e24] rounded-2xl p-2 shadow-inner">
                     <TrackTable
+                      isMobile={isMobile}
                       tracks={songs.slice(4)}
                       currentTrack={currentTrack}
                       isPlaying={isPlaying}
                       likedTrackIds={likedIds}
-                      onPlayTrack={playTrack}
+                      resolvingTrackIds={resolvingIds}
+                      onPlayTrack={handlePlayTrackOnDemand}
                       onToggleLike={toggleLike}
-                      onAddToQueue={addToQueue}
+                      onAddToQueue={handleQueueTrackOnDemand}
                       onArtistClick={(art) => navigateArtist({ name: art })}
                     />
                   </div>
@@ -724,13 +762,15 @@ export const SearchView: React.FC<SearchViewProps> = ({
               </div>
               <div className="bg-[#121216] border border-[#1e1e24] rounded-2xl p-2 shadow-inner">
                 <TrackTable
+                  isMobile={isMobile}
                   tracks={songs}
                   currentTrack={currentTrack}
                   isPlaying={isPlaying}
                   likedTrackIds={likedIds}
-                  onPlayTrack={playTrack}
+                  resolvingTrackIds={resolvingIds}
+                  onPlayTrack={handlePlayTrackOnDemand}
                   onToggleLike={toggleLike}
-                  onAddToQueue={addToQueue}
+                  onAddToQueue={handleQueueTrackOnDemand}
                   onArtistClick={(art) => navigateArtist({ name: art })}
                 />
               </div>
@@ -743,7 +783,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
               <h2 className="text-xl font-bold text-white tracking-tight">
                 Artists ({artists.length})
               </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+              <div className={isMobile ? "grid grid-cols-2 gap-3" : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5"}>
                 {artists.map((art) => (
                   <div
                     key={art.id}
@@ -788,7 +828,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
               <h2 className="text-xl font-bold text-white tracking-tight">
                 Albums ({albums.length})
               </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+              <div className={isMobile ? "grid grid-cols-2 gap-3" : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5"}>
                 {albums.map((alb) => (
                   <div
                     key={alb.id}
@@ -830,16 +870,40 @@ export const SearchView: React.FC<SearchViewProps> = ({
         </div>
       )}
 
-      {/* Empty State / Initial Prompt */}
+      {/* Spotify "Browse all" Category Grid when search is empty */}
       {!hasResults && !isLoading && (
-        <section className="py-16 text-center text-[#8a8a92] space-y-3">
-          <div className="w-16 h-16 rounded-2xl bg-[#121216] border border-[#1e1e24] flex items-center justify-center mx-auto shadow-xl">
-            <Music className="w-8 h-8 text-zinc-500 stroke-[1.5]" />
+        <section className="space-y-4 pt-2">
+          <h2 className="text-xl font-extrabold text-white tracking-tight">
+            Browse all
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {[
+              { title: 'Afrobeats', query: 'Afrobeats Burna Boy Asake', bg: 'from-[#e8115b] to-[#8c0a37]', img: 'https://i.ytimg.com/vi/421w1j87fEM/hqdefault.jpg' },
+              { title: 'Hip-Hop', query: 'Hip-Hop Kendrick Lamar Drake', bg: 'from-[#bc5900] to-[#733600]', img: 'https://i.ytimg.com/vi/T6eK-2OQtew/hqdefault.jpg' },
+              { title: 'East African Vibes', query: 'Bien Sauti Sol', bg: 'from-[#148a08] to-[#0b4f05]', img: 'https://i.ytimg.com/vi/Or2sMfOcTtw/hqdefault.jpg' },
+              { title: 'Amapiano', query: 'Amapiano Asake', bg: 'from-[#8d67ab] to-[#513866]', img: 'https://i.ytimg.com/vi/bbVZo4Yw7pI/hqdefault.jpg' },
+              { title: 'R&B & Soul', query: 'Tems Ayra Starr', bg: 'from-[#dc148c] to-[#7a0b4e]', img: 'https://i.ytimg.com/vi/1JltlSJH5bY/hqdefault.jpg' },
+              { title: 'Pop Hits', query: 'The Weeknd Blinding Lights', bg: 'from-[#1e3264] to-[#0f1933]', img: 'https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg' },
+              { title: 'UK Rap & Grime', query: 'Stormzy Vossi Bop', bg: 'from-[#503750] to-[#2b1d2b]', img: 'https://i.ytimg.com/vi/9ClYy0MxsU0/hqdefault.jpg' },
+              { title: 'Travis & Rage', query: 'Travis Scott FEIN', bg: 'from-[#e91429] to-[#7c0b16]', img: 'https://i.ytimg.com/vi/B9synWjqBn8/hqdefault.jpg' },
+            ].map((cat) => (
+              <div
+                key={cat.title}
+                onClick={() => handlePillClick(cat.query)}
+                className={`relative h-36 rounded-xl p-4 overflow-hidden cursor-pointer bg-gradient-to-br ${cat.bg} hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-lg`}
+              >
+                <h3 className="text-lg font-extrabold text-white tracking-tight max-w-[70%] leading-snug">
+                  {cat.title}
+                </h3>
+                <img
+                  src={cat.img}
+                  alt={cat.title}
+                  className="w-20 h-20 rounded-lg object-cover shadow-2xl absolute -right-2 -bottom-2 rotate-[25deg]"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            ))}
           </div>
-          <p className="text-lg font-bold text-white">Explore any music track, artist, or album</p>
-          <p className="text-xs text-[#8a8a92] max-w-md mx-auto">
-            Type an artist like Stormzy, Bien, Sauti Sol, Burna Boy, or click any genre pill above to stream official audio without ads.
-          </p>
         </section>
       )}
     </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Server, Play, Copy, Check, Terminal, Cpu, Loader2 } from 'lucide-react';
+import { apiUrl } from '../context/MusicPlayerContext';
 
 interface ApiExplorerModalProps {
   isOpen: boolean;
@@ -87,7 +88,7 @@ export const ApiExplorerModal: React.FC<ApiExplorerModalProps> = ({ isOpen, onCl
     setStatusCode(null);
     setLatencyMs(null);
 
-    const resolvedUrl = currentDef.urlTemplate.replace('{param}', encodeURIComponent(paramInput));
+    const resolvedUrl = apiUrl(currentDef.urlTemplate.replace('{param}', encodeURIComponent(paramInput)));
 
     const t0 = performance.now();
     try {

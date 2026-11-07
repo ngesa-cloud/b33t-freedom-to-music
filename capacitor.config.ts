@@ -1,0 +1,26 @@
+import type { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'com.ngesa.b33t',
+  appName: 'b33t',
+  webDir: 'dist',
+  server: {
+    androidScheme: 'https',
+    cleartext: true,
+  },
+  android: {
+    allowMixedContent: true,
+  },
+  plugins: {
+    StatusBar: {
+      overlaysWebView: true,
+      style: 'DARK',
+      backgroundColor: '#00000000',
+    },
+    Media: {
+      androidGalleryMode: false,
+    },
+  },
+};
+
+export default config;

@@ -1,6 +1,7 @@
 export interface Track {
   video_id?: string;
   id?: string; // compatibility alias
+  track_number?: number;
   title: string;
   artist: string;
   featuredArtist?: string;

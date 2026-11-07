@@ -1,0 +1,14 @@
+[
+	{
+		"pkg": "@capacitor-community/media",
+		"classpath": "com.getcapacitor.community.media.MediaPlugin"
+	},
+	{
+		"pkg": "@capacitor/status-bar",
+		"classpath": "com.capacitorjs.plugins.statusbar.StatusBarPlugin"
+	},
+	{
+		"pkg": "@mediagrid/capacitor-native-audio",
+		"classpath": "us.mediagrid.capacitorjs.plugins.nativeaudio.AudioPlayerPlugin"
+	}
+]

@@ -69,8 +69,14 @@ export const LocalImportModal: React.FC<LocalImportModalProps> = ({ isOpen, onCl
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-[#121216] border border-[#1e1e24] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-[#121216] border border-[#1e1e24] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col"
+      >
         {/* Header */}
         <div className="p-4 border-b border-[#1e1e24] flex items-center justify-between">
           <div className="flex items-center gap-3">

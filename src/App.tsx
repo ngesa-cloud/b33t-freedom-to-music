@@ -20,10 +20,13 @@ import { ManifestoModal } from './components/ManifestoModal';
 import { ApiExplorerModal } from './components/ApiExplorerModal';
 import { LocalImportModal } from './components/LocalImportModal';
 import { VideoModal } from './components/VideoModal';
+import { AndroidAppModal } from './components/AndroidAppModal';
+import { AndroidMobileLayout } from './components/AndroidMobileLayout';
 import { TrackTable } from './components/TrackTable';
-import { Track, FeaturedArtist } from './types/music';
-import { Heart, HardDrive, Plus, X } from 'lucide-react';
+import { FeaturedArtist } from './types/music';
+import { Heart, Plus, X, WifiOff } from 'lucide-react';
 import { youTubeEngine } from './audio/YouTubeEngine';
+import { useOnlineStatus } from './hooks/usePWAInstall';
 
 function AppContent() {
   const {
@@ -33,6 +36,7 @@ function AppContent() {
     duration,
     volume,
     likedIds,
+    catalogTracks,
     togglePlay,
     seek,
     setVolume,
@@ -42,14 +46,36 @@ function AppContent() {
     playTrack,
     toggleLike,
     addToQueue,
-    cacheStatus,
-    clearCache,
     isMiniPlayerOpen,
     toggleMiniPlayer,
   } = useMusicPlayer();
 
+  const isOnline = useOnlineStatus();
+
   useEffect(() => {
-    youTubeEngine.initPlayer('b33t-embedded-yt');
+    if (!(window as any).Capacitor?.isNativePlatform?.()) {
+      youTubeEngine.initPlayer('b33t-embedded-yt');
+    }
+  }, []);
+
+  // Detect mobile viewport or ?mode=android query parameter
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768;
+  });
+
+  const [isAndroidModeManual, setIsAndroidModeManual] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('mode') === 'android' || params.get('app') === 'android';
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileViewport(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // Navigation state
@@ -69,17 +95,7 @@ function AppContent() {
   const [isManifestoOpen, setIsManifestoOpen] = useState<boolean>(false);
   const [isApiExplorerOpen, setIsApiExplorerOpen] = useState<boolean>(false);
   const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
-
-  // Stored tracks for library
-  const [storedTracks, setStoredTracks] = useState<Track[]>([]);
-
-  useEffect(() => {
-    // Initial fetch of tracks for library
-    fetch('/api/trending')
-      .then((res) => res.json())
-      .then((data) => setStoredTracks(data))
-      .catch(console.warn);
-  }, []);
+  const [isAndroidModalOpen, setIsAndroidModalOpen] = useState<boolean>(false);
 
   const navigateTo = (view: string) => {
     setCurrentView(view);
@@ -113,9 +129,10 @@ function AppContent() {
     setIsManifestoOpen(false);
     setIsApiExplorerOpen(false);
     setIsImportOpen(false);
+    setIsAndroidModalOpen(false);
   }, []);
 
-  // Section 4.9: Global keyboard shortcuts (suppressed on INPUT / TEXTAREA / contentEditable)
+  // Global keyboard shortcuts (suppressed on INPUT / TEXTAREA / contentEditable)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -203,223 +220,261 @@ function AppContent() {
     closeAllOverlays,
   ]);
 
+  const likedTracksList = catalogTracks.filter((t) =>
+    likedIds.includes(t.video_id || t.id || '')
+  );
+
+  const showAndroidExperience = isMobileViewport || isAndroidModeManual;
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0c] text-zinc-100 font-sans select-none">
-      {/* 240px Collapsible Sidebar */}
-      <Sidebar
-        currentView={currentView}
-        onNavigate={navigateTo}
-        onOpenImport={() => setIsImportOpen(true)}
-      />
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-black text-zinc-100 font-sans select-none">
+      {/* Offline Banner */}
+      {!isOnline && (
+        <div className="bg-amber-500 text-black px-4 py-1 text-xs font-bold flex items-center justify-center gap-2 shrink-0 z-50">
+          <WifiOff className="w-3.5 h-3.5" />
+          <span>Offline Mode — Playing cached tracks & local library</span>
+        </div>
+      )}
 
-      {/* Main View Area */}
-      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
-        <TopNav
-          searchQuery={searchQuery}
-          onSearchChange={(q) => {
-            setSearchQuery(q);
-            if (currentView !== 'search') setCurrentView('search');
-          }}
-          onSearchSubmit={() => {
-            if (currentView !== 'search') setCurrentView('search');
-          }}
-          onSearchFocus={() => {
-            if (currentView !== 'search') setCurrentView('search');
-          }}
-          onClearSearch={() => {
-            setSearchQuery('');
-          }}
-          onOpenShortcuts={() => setIsShortcutsOpen(true)}
-          onOpenImport={() => setIsImportOpen(true)}
-          onOpenEqualizer={() => setIsEqualizerOpen(true)}
-          canGoBack={historyIndex > 0}
-          canGoForward={historyIndex < history.length - 1}
-          onGoBack={handleGoBack}
-          onGoForward={handleGoForward}
-        />
-
-        {/* Viewport content */}
-        <main className="flex-1 overflow-y-auto min-h-0 bg-gradient-to-b from-[#121216]/50 to-[#0a0a0c]">
-          {currentView === 'home' && (
-            <HomeView
-              onSelectArtist={(artist) => {
-                setSelectedArtist(artist);
-                setCurrentView('artist');
-              }}
-              onOpenManifesto={() => setIsManifestoOpen(true)}
-              onOpenApiExplorer={() => setIsApiExplorerOpen(true)}
-              onOpenVisualizer={() => setIsVisualizerOpen(true)}
+      {showAndroidExperience ? (
+        <div className="flex-1 flex items-center justify-center bg-black overflow-hidden relative">
+          {/* If previewing on a large desktop screen, frame it cleanly or let it fill mobile screens */}
+          <div
+            className={
+              !isMobileViewport && isAndroidModeManual
+                ? 'w-[412px] h-[92vh] max-h-[880px] rounded-[36px] border-[6px] border-[#282828] shadow-[0_24px_80px_rgba(30,215,96,0.15)] overflow-hidden relative bg-[#121212]'
+                : 'w-full h-full overflow-hidden relative bg-[#121212]'
+            }
+          >
+            <AndroidMobileLayout
+              currentView={currentView}
+              onNavigate={navigateTo}
+              selectedArtist={selectedArtist}
+              onSelectArtist={setSelectedArtist}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              onOpenShareModal={() => setIsAndroidModalOpen(true)}
+              onOpenLyrics={() => setIsLyricsOpen(true)}
               onOpenEqualizer={() => setIsEqualizerOpen(true)}
+              onOpenVisualizer={() => setIsVisualizerOpen(true)}
+              onOpenQueue={() => setIsQueueOpen(true)}
+              onOpenImport={() => setIsImportOpen(true)}
+              isDesktopPreview={!isMobileViewport && isAndroidModeManual}
+              onExitAndroidMode={() => setIsAndroidModeManual(false)}
             />
-          )}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Spotify Global Top Bar */}
+          <TopNav
+            currentView={currentView}
+            onNavigateHome={() => navigateTo('home')}
+            searchQuery={searchQuery}
+            onSearchChange={(q) => {
+              setSearchQuery(q);
+              if (currentView !== 'search') navigateTo('search');
+            }}
+            onSearchSubmit={() => {
+              if (currentView !== 'search') navigateTo('search');
+            }}
+            onSearchFocus={() => {
+              if (currentView !== 'search') navigateTo('search');
+            }}
+            onClearSearch={() => {
+              setSearchQuery('');
+            }}
+            onOpenShortcuts={() => setIsShortcutsOpen(true)}
+            onOpenImport={() => setIsImportOpen(true)}
+            onOpenEqualizer={() => setIsEqualizerOpen(true)}
+            onOpenAndroidModal={() => setIsAndroidModalOpen(true)}
+            onToggleAndroidMode={() => setIsAndroidModeManual(true)}
+            canGoBack={historyIndex > 0}
+            canGoForward={historyIndex < history.length - 1}
+            onGoBack={handleGoBack}
+            onGoForward={handleGoForward}
+          />
 
-          {currentView === 'search' && (
-            <SearchView
-              initialQuery={searchQuery}
+          {/* Middle Split: Left "Your Library" Island + Right Main Viewport Island */}
+          <div className="flex-1 flex gap-2 px-2 min-h-0 overflow-hidden">
+            <Sidebar
+              currentView={currentView}
+              onNavigate={navigateTo}
+              onOpenImport={() => setIsImportOpen(true)}
               onSelectArtist={(artist) => {
                 setSelectedArtist(artist);
-                setCurrentView('artist');
-              }}
-              onArtistClick={(artistName) => {
-                setSelectedArtist({
-                  name: artistName,
-                  monthly_listeners: '8.4M',
-                  origin: 'Global',
-                  bio: `Renowned creator of high-fidelity music discographies.`,
-                  image: 'https://i.ytimg.com/vi/Or2sMfOcTtw/hqdefault.jpg',
-                });
-                setCurrentView('artist');
+                navigateTo('artist');
               }}
             />
-          )}
 
-          {currentView === 'artist' && selectedArtist && (
-            <ArtistView
-              artist={selectedArtist}
-              onBack={() => setCurrentView('home')}
-            />
-          )}
-
-          {currentView === 'liked' && (
-            <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
-              <div className="relative rounded-2xl overflow-hidden p-6 md:p-10 bg-gradient-to-r from-indigo-950 via-[#121216] to-[#0a0a0c] border border-[#1e1e24] shadow-2xl flex items-end gap-6">
-                <div className="w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-800 flex items-center justify-center shrink-0 shadow-2xl">
-                  <Heart className="w-16 h-16 fill-white text-white" />
-                </div>
-                <div className="flex-1 space-y-2">
-                  <span className="text-xs uppercase font-mono tracking-wider text-purple-200">
-                    Your Freedom Library
-                  </span>
-                  <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight">
-                    Liked Songs
-                  </h1>
-                  <p className="text-xs text-[#8a8a92]">
-                    {likedIds.length} tracks saved locally on your workstation
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-[#121216] border border-[#1e1e24] rounded-xl p-2 shadow-inner">
-                <TrackTable
-                  tracks={storedTracks.filter((t) => likedIds.includes(t.video_id || t.id || ''))}
-                  currentTrack={currentTrack}
-                  isPlaying={isPlaying}
-                  likedTrackIds={likedIds}
-                  onPlayTrack={playTrack}
-                  onToggleLike={toggleLike}
-                  onAddToQueue={addToQueue}
+            {/* Main View Island (#121212 rounded-lg scrollable container) */}
+            <main className="flex-1 overflow-y-auto min-h-0 bg-[#121212] rounded-lg relative">
+              {currentView === 'home' && (
+                <HomeView
+                  onSelectArtist={(artist) => {
+                    setSelectedArtist(artist);
+                    navigateTo('artist');
+                  }}
+                  onNavigate={navigateTo}
+                  onOpenManifesto={() => setIsManifestoOpen(true)}
+                  onOpenApiExplorer={() => setIsApiExplorerOpen(true)}
+                  onOpenVisualizer={() => setIsVisualizerOpen(true)}
+                  onOpenEqualizer={() => setIsEqualizerOpen(true)}
                 />
-              </div>
-            </div>
-          )}
+              )}
 
-          {currentView === 'library' && (
-            <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-                    Your Freedom Library
-                  </h1>
-                  <p className="text-xs text-[#8a8a92] mt-0.5">
-                    100% private, zero telemetry, local disk storage
-                  </p>
-                </div>
+              {currentView === 'search' && (
+                <SearchView
+                  initialQuery={searchQuery}
+                  onQueryChange={setSearchQuery}
+                  hideInlineSearch={true}
+                  onSelectArtist={(artist) => {
+                    setSelectedArtist(artist);
+                    navigateTo('search');
+                    navigateTo('artist');
+                  }}
+                  onArtistClick={(artistName) => {
+                    const cleanName = artistName
+                      .split(/,|&|\bfeat\.?|\bft\.?/i)[0]
+                      .replace(/_/g, ' ')
+                      .trim();
+                    setSelectedArtist({
+                      name: cleanName || artistName,
+                      monthly_listeners: '1.8M',
+                      origin: 'Global',
+                      bio: `${cleanName || artistName} official recording discography.`,
+                      image: '',
+                    });
+                    navigateTo('artist');
+                  }}
+                />
+              )}
 
-                <button
-                  onClick={() => setIsImportOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1DB954] text-black font-bold text-xs hover:bg-[#00e0a0] transition-colors shadow"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Import Audio</span>
-                </button>
-              </div>
+              {currentView === 'artist' && selectedArtist && (
+                <ArtistView
+                  artist={selectedArtist}
+                  onBack={handleGoBack}
+                />
+              )}
 
-              {/* Cache storage tile */}
-              <div className="p-5 rounded-2xl bg-[#121216] border border-[#1e1e24] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-[#1DB954] flex items-center justify-center shrink-0">
-                    <HardDrive className="w-5 h-5" />
+              {currentView === 'liked' && (
+                <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
+                  <div className="relative rounded-2xl overflow-hidden p-6 md:p-10 bg-gradient-to-b from-[#5038a0] to-[#121212] flex items-end gap-6">
+                    <div className="w-32 h-32 md:w-44 md:h-44 rounded-lg bg-gradient-to-br from-[#450af5] via-[#8e8ee5] to-[#c4efd9] flex items-center justify-center shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+                      <Heart className="w-16 h-16 fill-white text-white" />
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <span className="text-xs font-bold text-white">Playlist</span>
+                      <h1 className="text-3xl md:text-6xl font-black text-white tracking-tight">
+                        Liked Songs
+                      </h1>
+                      <p className="text-xs text-[#b3b3b3]">
+                        {likedTracksList.length} songs
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-sm font-bold text-white">
-                      audio_cache/ (*.opus) Storage
-                    </h2>
-                    <p className="text-xs text-[#8a8a92]">
-                      {cacheStatus?.track_count || 0} tracks cached for instant offline playback
-                    </p>
+
+                  <div className="p-2">
+                    <TrackTable
+                      tracks={likedTracksList}
+                      currentTrack={currentTrack}
+                      isPlaying={isPlaying}
+                      likedTrackIds={likedIds}
+                      onPlayTrack={playTrack}
+                      onToggleLike={toggleLike}
+                      onAddToQueue={addToQueue}
+                    />
                   </div>
                 </div>
+              )}
 
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-xs text-[#00e0a0] font-bold px-3 py-1.5 rounded-lg bg-emerald-950/80 border border-emerald-500/30">
-                    {((cacheStatus?.total_bytes || 0) / (1024 * 1024)).toFixed(1)} MB Active
-                  </span>
-                  <button
-                    onClick={() => clearCache()}
-                    className="px-3 py-1.5 rounded-lg bg-[#1a1a20] hover:bg-[#22222a] border border-[#1e1e24] text-xs text-[#8a8a92] hover:text-white transition-colors"
-                  >
-                    Flush Cache
-                  </button>
+              {currentView === 'library' && (
+                <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+                        Your Library
+                      </h1>
+                      <p className="text-xs text-[#b3b3b3] mt-0.5">
+                        Saved tracks and local audio imports
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => setIsImportOpen(true)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#1ed760] text-black font-bold text-xs hover:bg-[#3be477] transition-colors shadow"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Import Audio</span>
+                    </button>
+                  </div>
+
+                  <section className="space-y-3">
+                    <TrackTable
+                      tracks={catalogTracks}
+                      currentTrack={currentTrack}
+                      isPlaying={isPlaying}
+                      likedTrackIds={likedIds}
+                      onPlayTrack={playTrack}
+                      onToggleLike={toggleLike}
+                      onAddToQueue={addToQueue}
+                    />
+                  </section>
                 </div>
-              </div>
+              )}
 
-              {/* Tracks Table */}
-              <section className="space-y-3">
-                <h2 className="text-lg font-bold text-white tracking-tight">Catalog Tracks</h2>
-                <div className="bg-[#121216] border border-[#1e1e24] rounded-xl p-2 shadow-inner">
-                  <TrackTable
-                    tracks={storedTracks}
-                    currentTrack={currentTrack}
-                    isPlaying={isPlaying}
-                    likedTrackIds={likedIds}
-                    onPlayTrack={playTrack}
-                    onToggleLike={toggleLike}
-                    onAddToQueue={addToQueue}
-                  />
+              {currentView === 'manifesto' && (
+                <div className="p-6 md:p-8 max-w-5xl mx-auto">
+                  <ManifestoModal isOpen={true} onClose={() => navigateTo('home')} />
                 </div>
-              </section>
-            </div>
-          )}
+              )}
 
-          {currentView === 'manifesto' && (
-            <div className="p-6 md:p-8 max-w-5xl mx-auto">
-              <ManifestoModal isOpen={true} onClose={() => setCurrentView('home')} />
-            </div>
-          )}
+              {currentView === 'api-explorer' && (
+                <div className="p-6 md:p-8 max-w-5xl mx-auto">
+                  <ApiExplorerModal isOpen={true} onClose={() => navigateTo('home')} />
+                </div>
+              )}
+            </main>
+          </div>
 
-          {currentView === 'api-explorer' && (
-            <div className="p-6 md:p-8 max-w-5xl mx-auto">
-              <ApiExplorerModal isOpen={true} onClose={() => setCurrentView('home')} />
-            </div>
-          )}
-        </main>
-
-        {/* Fixed 96px PlayerBar */}
-        <PlayerBar
-          onToggleVideo={() => setIsVideoOpen(!isVideoOpen)}
-          onToggleVisualizer={() => setIsVisualizerOpen(!isVisualizerOpen)}
-          onToggleLyrics={() => setIsLyricsOpen(!isLyricsOpen)}
-          onToggleQueue={() => setIsQueueOpen(!isQueueOpen)}
-          onToggleEqualizer={() => setIsEqualizerOpen(!isEqualizerOpen)}
-          isVideoOpen={isVideoOpen}
-          isVisualizerOpen={isVisualizerOpen}
-          isLyricsOpen={isLyricsOpen}
-          isQueueOpen={isQueueOpen}
-          isEqualizerOpen={isEqualizerOpen}
-          onArtistClick={(name) => {
-            setSelectedArtist({
-              name,
-              monthly_listeners: '4.8M',
-              origin: 'East Africa / Global',
-              bio: `Renowned music creator.`,
-              image: 'https://i.ytimg.com/vi/Or2sMfOcTtw/hqdefault.jpg',
-            });
-            setCurrentView('artist');
-          }}
-        />
-      </div>
+          {/* Bottom Spotify PlayerBar */}
+          <PlayerBar
+            onToggleVideo={() => setIsVideoOpen(!isVideoOpen)}
+            onToggleVisualizer={() => setIsVisualizerOpen(!isVisualizerOpen)}
+            onToggleLyrics={() => setIsLyricsOpen(!isLyricsOpen)}
+            onToggleQueue={() => setIsQueueOpen(!isQueueOpen)}
+            onToggleEqualizer={() => setIsEqualizerOpen(!isEqualizerOpen)}
+            isVideoOpen={isVideoOpen}
+            isVisualizerOpen={isVisualizerOpen}
+            isLyricsOpen={isLyricsOpen}
+            isQueueOpen={isQueueOpen}
+            isEqualizerOpen={isEqualizerOpen}
+            onArtistClick={(name) => {
+              const cleanName = name
+                .split(/,|&|\bfeat\.?|\bft\.?/i)[0]
+                .replace(/_/g, ' ')
+                .trim();
+              setSelectedArtist({
+                name: cleanName || name,
+                monthly_listeners: '1.8M',
+                origin: 'Global',
+                bio: `${cleanName || name} official recording discography.`,
+                image: '',
+              });
+              navigateTo('artist');
+            }}
+          />
+        </>
+      )}
 
       {/* Modals & Overlays */}
+      <AndroidAppModal
+        isOpen={isAndroidModalOpen}
+        onClose={() => setIsAndroidModalOpen(false)}
+        isAndroidViewMode={isAndroidModeManual}
+        onToggleAndroidViewMode={() => setIsAndroidModeManual((prev) => !prev)}
+      />
+
       <VideoModal
         isOpen={isVideoOpen}
         onClose={() => setIsVideoOpen(false)}
@@ -455,19 +510,28 @@ function AppContent() {
         onClose={() => setIsImportOpen(false)}
       />
 
+      <ManifestoModal
+        isOpen={isManifestoOpen}
+        onClose={() => setIsManifestoOpen(false)}
+      />
+
+      <ApiExplorerModal
+        isOpen={isApiExplorerOpen}
+        onClose={() => setIsApiExplorerOpen(false)}
+      />
+
       {/* Embedded YouTube Audio Player & Mini-Stage */}
       <div
         id="b33t-embedded-yt-wrapper"
         className={`fixed z-30 transition-all duration-300 shadow-2xl overflow-hidden border border-[#1e1e24] bg-black ${
           isMiniPlayerOpen && currentTrack
-            ? 'bottom-28 right-6 w-80 h-48 rounded-xl opacity-100 pointer-events-auto'
+            ? 'bottom-24 right-6 w-80 h-48 rounded-xl opacity-100 pointer-events-auto'
             : 'bottom-0 right-0 w-1 h-1 opacity-0 pointer-events-none'
         }`}
       >
         {isMiniPlayerOpen && (
           <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-black/80 backdrop-blur-sm px-2.5 py-1 rounded-md text-[11px] text-zinc-300 border border-white/10 shadow-lg">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-semibold text-white">Full Track Stream</span>
+            <span className="font-semibold text-white">Video Stage</span>
             <button
               onClick={toggleMiniPlayer}
               className="ml-1 text-zinc-400 hover:text-white p-0.5 rounded"

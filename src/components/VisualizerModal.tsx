@@ -208,8 +208,14 @@ export const VisualizerModal: React.FC<VisualizerModalProps> = ({ isOpen, onClos
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-200">
-      <div className="bg-[#121216] border border-[#1e1e24] rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-[#121216] border border-[#1e1e24] rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col"
+      >
         {/* Header */}
         <div className="p-4 border-b border-[#1e1e24] flex items-center justify-between">
           <div className="flex items-center gap-3">

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">b33t</string>
+    <string name="title_activity_main">b33t</string>
+    <string name="package_name">com.ngesa.b33t</string>
+    <string name="custom_url_scheme">com.ngesa.b33t</string>
+</resources>

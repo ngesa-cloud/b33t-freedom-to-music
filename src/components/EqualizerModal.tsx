@@ -22,8 +22,14 @@ export const EqualizerModal: React.FC<EqualizerModalProps> = ({ isOpen, onClose 
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-[#121216] border border-[#1e1e24] rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-[#121216] border border-[#1e1e24] rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col"
+      >
         {/* Header */}
         <div className="p-4 border-b border-[#1e1e24] flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -86,8 +92,8 @@ export const EqualizerModal: React.FC<EqualizerModalProps> = ({ isOpen, onClose 
                     {col.val > 0 ? `+${col.val.toFixed(1)}` : col.val.toFixed(1)} dB
                   </span>
 
-                  {/* Vertical Slider */}
-                  <div className="h-36 flex items-center justify-center py-2 relative">
+                  {/* Vertical Slider using cross-browser -rotate-90 */}
+                  <div className="h-36 w-10 flex items-center justify-center relative">
                     <input
                       type="range"
                       min={-12}
@@ -95,11 +101,7 @@ export const EqualizerModal: React.FC<EqualizerModalProps> = ({ isOpen, onClose 
                       step={0.5}
                       value={col.val}
                       onChange={(e) => setEqBand(col.key, parseFloat(e.target.value))}
-                      className="h-32 w-2 appearance-none bg-zinc-800 rounded-lg cursor-pointer accent-[#1DB954]"
-                      style={{
-                        writingMode: 'vertical-lr',
-                        direction: 'rtl',
-                      }}
+                      className="w-32 h-2 -rotate-90 appearance-none bg-zinc-800 rounded-lg cursor-pointer accent-[#1DB954]"
                     />
                   </div>
 
